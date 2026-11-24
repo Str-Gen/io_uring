@@ -11,10 +11,10 @@ from mojix.io_uring import (
 )
 from mojix.fd import IoUringFileDescriptor
 from mojix.errno import Errno
-from testing import *
+from std.testing import *
 
 
-fn _io_uring_enter_get_events[
+def _io_uring_enter_get_events[
     Fd: IoUringFileDescriptor
 ](fd: Fd) raises -> UInt32:
     return io_uring_enter(
@@ -26,19 +26,17 @@ fn _io_uring_enter_get_events[
     )
 
 
-fn _test_io_uring_setup[*, use_sq_array: Bool]() raises:
-    params = IoUringParams()
+def _test_io_uring_setup[*, use_sq_array: Bool]() raises:
+    var params = IoUringParams()
 
-    @parameter
-    if not use_sq_array:
+    comptime if not use_sq_array:
         params.flags = IoUringSetupFlags.NO_SQARRAY
 
     _ = io_uring_setup[is_registered=False](16, params)
     assert_equal(params.sq_entries, 16)
     assert_equal(params.cq_entries, 32)
 
-    @parameter
-    if use_sq_array:
+    comptime if use_sq_array:
         assert_false(params.flags)
     else:
         assert_true(params.flags & IoUringSetupFlags.NO_SQARRAY)
@@ -59,32 +57,38 @@ fn _test_io_uring_setup[*, use_sq_array: Bool]() raises:
     assert_equal(params.cq_off.overflow, 44)
     assert_equal(params.cq_off.cqes, 64)
 
-    @parameter
-    if use_sq_array:
+    comptime if use_sq_array:
         assert_equal(
             params.sq_off.array,
-            params.cq_off.cqes + params.cq_entries * CQE_SIZE_DEFAULT,
+            params.cq_off.cqes + params.cq_entries * UInt32(CQE_SIZE_DEFAULT),
         )
     else:
         assert_equal(params.sq_off.array, 0)
 
 
-fn test_io_uring_register_enable_rings_error() raises:
-    params = IoUringParams()
-    fd = io_uring_setup[is_registered=False](16, params)
+def test_io_uring_register_enable_rings_error() raises:
+    var params = IoUringParams()
+    var fd = io_uring_setup[is_registered=False](16, params)
     with assert_raises(contains=String(Errno.EBADFD)):
         _ = io_uring_register(fd, NoRegisterArg.ENABLE_RINGS)
 
 
-fn test_io_uring_setup() raises:
+def test_io_uring_setup() raises:
     _test_io_uring_setup[use_sq_array=True]()
 
 
-fn test_io_uring_setup_no_sq_array() raises:
+def test_io_uring_setup_no_sq_array() raises:
     _test_io_uring_setup[use_sq_array=False]()
 
 
-fn test_io_uring_enter() raises:
-    params = IoUringParams()
-    fd = io_uring_setup[is_registered=False](16, params)
+def test_io_uring_enter() raises:
+    var params = IoUringParams()
+    var fd = io_uring_setup[is_registered=False](16, params)
     assert_equal(_io_uring_enter_get_events(fd), 0)
+
+
+def main() raises:
+    test_io_uring_register_enable_rings_error()
+    test_io_uring_setup()
+    test_io_uring_setup_no_sq_array()
+    test_io_uring_enter()

@@ -2,12 +2,11 @@ from .utils import _next_power_of_two
 from mojix.errno import Errno
 from mojix.io_uring import IoUringParams, IoUringSetupFlags
 
-alias SQ_ENTRIES_MAX = 32768
-alias CQ_ENTRIES_MAX = SQ_ENTRIES_MAX * 2
+comptime SQ_ENTRIES_MAX = 32768
+comptime CQ_ENTRIES_MAX = SQ_ENTRIES_MAX * 2
 
 
-@value
-struct Params(Defaultable):
+struct Params(Defaultable, ImplicitlyCopyable, Movable):
     var flags: IoUringSetupFlags
     var _cq_entries: UInt32
     var sq_thread_cpu: UInt32
@@ -19,7 +18,7 @@ struct Params(Defaultable):
     # Life cycle methods
     # ===------------------------------------------------------------------=== #
 
-    fn __init__(out self):
+    def __init__(out self):
         self.flags = IoUringSetupFlags.NO_SQARRAY
         self._cq_entries = 0
         self.sq_thread_cpu = 0
@@ -32,25 +31,24 @@ struct Params(Defaultable):
     # ===-------------------------------------------------------------------===#
 
     # TODO: Use NonZeroUInt32 value type.
-    fn cq_entries(mut self, value: UInt32) -> ref [self] Self:
+    def cq_entries(mut self, value: UInt32) -> ref[origin_of(self)] Self:
         self._cq_entries = value
         self.flags |= IoUringSetupFlags.CQSIZE
         return self
 
-    fn clamp(mut self) -> ref [self] Self:
+    def clamp(mut self) -> ref[origin_of(self)] Self:
         self.flags |= IoUringSetupFlags.CLAMP
         return self
 
-    fn dontfork(mut self) -> ref [self] Self:
+    def dontfork(mut self) -> ref[origin_of(self)] Self:
         self._dontfork = True
         return self
 
-    fn is_dontfork(self) -> Bool:
+    def is_dontfork(self) -> Bool:
         return self._dontfork
 
 
-@register_passable("trivial")
-struct Entries:
+struct Entries(TrivialRegisterPassable):
     var sq_entries: UInt32
     var cq_entries: UInt32
 
@@ -58,7 +56,7 @@ struct Entries:
     # Life cycle methods
     # ===------------------------------------------------------------------=== #
 
-    fn __init__(out self, *, sq_entries: UInt32, params: IoUringParams) raises:
+    def __init__(out self, *, sq_entries: UInt32, params: IoUringParams) raises:
         if sq_entries == 0:
             raise String(Errno.EINVAL)
 

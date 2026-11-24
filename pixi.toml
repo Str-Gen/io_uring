@@ -1,4 +1,4 @@
-[project]
+[workspace]
 authors = ["Dmitry Salin <dmitry.salin@gmail.com>"]
 channels = ["conda-forge", "https://conda.modular.com/max"]
 description = "The low-level `io_uring` userspace interface"
@@ -7,6 +7,8 @@ platforms = ["linux-64"]
 version = "0.1.0"
 
 [tasks]
+build = "bash scripts/build.sh"
+test = "bash scripts/run_tests.sh"
 
 [dependencies]
-max = "==25.1.1"
+mojo = "==1.2.0"

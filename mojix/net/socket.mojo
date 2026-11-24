@@ -13,10 +13,10 @@ from mojix.fd import OwnedFd, FileDescriptor
 
 
 @always_inline
-fn socket(
+def socket(
     domain: AddrFamily,
     type: SocketType,
-) raises -> OwnedFd:
+) raises -> OwnedFd[False]:
     """Creates a socket.
     [Linux]: https://man7.org/linux/man-pages/man2/socket.2.html.
     """
@@ -24,11 +24,11 @@ fn socket(
 
 
 @always_inline
-fn socket(
+def socket(
     domain: AddrFamily,
     type: SocketType,
     protocol: Protocol,
-) raises -> OwnedFd:
+) raises -> OwnedFd[False]:
     """Creates a socket.
     [Linux]: https://man7.org/linux/man-pages/man2/socket.2.html.
     """
@@ -36,12 +36,12 @@ fn socket(
 
 
 @always_inline
-fn socket(
+def socket(
     domain: AddrFamily,
     type: SocketType,
     flags: SocketFlags,
     protocol: Protocol,
-) raises -> OwnedFd:
+) raises -> OwnedFd[False]:
     """Creates a socket.
     [Linux]: https://man7.org/linux/man-pages/man2/socket.2.html.
     """
@@ -49,17 +49,18 @@ fn socket(
 
 
 @always_inline
-fn bind[
+def bind[
     Fd: FileDescriptor, Addr: SocketAddrStor
 ](fd: Fd, ref addr: Addr) raises:
     """Binds a socket to an address.
     [Linux]: https://man7.org/linux/man-pages/man2/bind.2.html.
     """
-    _bind(fd, addr.addr_stor())
+    var stor = addr.addr_stor()
+    _bind(fd, stor)
 
 
 @always_inline
-fn bind[Fd: FileDescriptor, Addr: SocketAddr](fd: Fd, ref addr: Addr) raises:
+def bind[Fd: FileDescriptor, Addr: SocketAddr](fd: Fd, ref addr: Addr) raises:
     """Binds a socket to an address.
     [Linux]: https://man7.org/linux/man-pages/man2/bind.2.html.
     """
@@ -67,7 +68,7 @@ fn bind[Fd: FileDescriptor, Addr: SocketAddr](fd: Fd, ref addr: Addr) raises:
 
 
 @always_inline
-fn listen[Fd: FileDescriptor](fd: Fd, backlog: Backlog) raises:
+def listen[Fd: FileDescriptor](fd: Fd, backlog: Backlog) raises:
     """Enables listening for incoming connections.
     [Linux]: https://man7.org/linux/man-pages/man2/listen.2.html.
     """

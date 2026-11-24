@@ -1,5 +1,7 @@
-#!/bin/bash
-
-magic run mojo package io_uring -o io_uring.mojopkg
-magic run mojo package mojix -o mojix.mojopkg
-magic run mojo package linux_raw -o linux_raw.mojopkg
+#!/usr/bin/env bash
+set -eu
+cd "$(dirname "$0")/.."
+mkdir -p build
+for package in linux_raw mojix io_uring; do
+    pixi run mojo precompile -I . "$package" -o "build/$package.mojoc"
+done

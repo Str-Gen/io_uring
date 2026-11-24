@@ -1,45 +1,39 @@
-from bit import byte_swap
-from sys.info import alignof, sizeof, is_big_endian
+from std.bit import byte_swap
+from std.sys.info import align_of, Endian, size_of
 from linux_raw.utils import DTypeArray
 
 
-alias StaticMutableOrigin = __mlir_attr[
-    `#lit.origin.field<`,
-    `#lit.static.origin : !lit.origin<1>`,
-    `, "__constants__"> : !lit.origin<1>`,
-]
-
-
 @always_inline("nodebug")
-fn _aligned_u64[T: AnyType]():
+def _aligned_u64[T: AnyType]():
     # [Linux]: https://github.com/torvalds/linux/blob/v6.7/include/uapi/linux/types.h#L47.
-    constrained[alignof[T]() >= 8]()
+    comptime assert align_of[T]() >= 8
 
 
 @always_inline("nodebug")
-fn _size_eq[T: AnyType, I: AnyType]():
-    constrained[sizeof[T]() == sizeof[I]()]()
+def _size_eq[T: AnyType, I: AnyType]():
+    comptime assert size_of[T]() == size_of[I]()
 
 
 @always_inline("nodebug")
-fn _size_eq[T: AnyType, size: IntLiteral]():
-    constrained[sizeof[T]() == size]()
+def _size_eq[T: AnyType, size: Int]():
+    comptime assert size_of[T]() == size
 
 
 @always_inline("nodebug")
-fn _align_eq[T: AnyType, I: AnyType]():
-    constrained[alignof[T]() == alignof[I]()]()
+def _align_eq[T: AnyType, I: AnyType]():
+    comptime assert align_of[T]() == align_of[I]()
 
 
 @always_inline("nodebug")
-fn _align_eq[T: AnyType, align: IntLiteral]():
-    constrained[alignof[T]() == align]()
+def _align_eq[T: AnyType, align: Int]():
+    comptime assert align_of[T]() == align
 
 
 @always_inline("nodebug")
-fn _to_be[type: DType, size: Int](value: SIMD[type, size]) -> SIMD[type, size]:
-    @parameter
-    if is_big_endian():
+def _to_be[
+    type: DType, size: SIMDLength, //
+](value: SIMD[type, size]) -> SIMD[type, size]:
+    comptime if Endian.native() == .big:
         return value
     else:
         return byte_swap(value)

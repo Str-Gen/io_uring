@@ -4,22 +4,22 @@ from .errno import unsafe_decode_ptr, unsafe_decode_none
 from linux_raw.x86_64.general import *
 from linux_raw.x86_64.general import __NR_mmap, __NR_munmap, __NR_madvise
 from linux_raw.x86_64.syscall import syscall
-from sys.info import is_64bit
-from memory import UnsafePointer
+from std.sys.info import is_64bit
+from std.memory import Pointer
 
 
 @always_inline
-fn mmap[
+def mmap[
     Fd: FileDescriptor
 ](
     *,
-    unsafe_ptr: UnsafePointer[c_void],
+    unsafe_ptr: Optional[Pointer[c_void, MutUntrackedOrigin]],
     len: UInt,
     prot: ProtFlags,
     flags: MapFlags,
     fd: Fd,
     offset: UInt64,
-) raises -> UnsafePointer[c_void]:
+) raises -> Pointer[c_void, MutUntrackedOrigin]:
     """Unsafely creates a file-backed memory mapping.
     [Linux]: https://man7.org/linux/man-pages/man2/mmap.2.html.
 
@@ -41,23 +41,26 @@ fn mmap[
     Safety:
         Unsafe pointers and lots of special semantics.
     """
-    constrained[is_64bit()]()
+    comptime assert is_64bit()
 
-    res = syscall[__NR_mmap, UnsafePointer[c_void]](
-        unsafe_ptr, len, prot, flags, fd.fd(), offset
+    var address: UInt = 0
+    if case .Some(ptr) = unsafe_ptr:
+        address = UInt(Int(ptr))
+    var res = syscall[__NR_mmap, Pointer[c_void, MutUntrackedOrigin]](
+        address, len, prot, flags, fd.fd(), offset
     )
     unsafe_decode_ptr(res)
     return res
 
 
 @always_inline
-fn mmap_anonymous(
+def mmap_anonymous(
     *,
-    unsafe_ptr: UnsafePointer[c_void],
+    unsafe_ptr: Optional[Pointer[c_void, MutUntrackedOrigin]],
     len: UInt,
     prot: ProtFlags,
     flags: MapFlags,
-) raises -> UnsafePointer[c_void]:
+) raises -> Pointer[c_void, MutUntrackedOrigin]:
     """Unsafely creates an anonymous memory mapping.
     [Linux]: https://man7.org/linux/man-pages/man2/mmap.2.html.
 
@@ -76,17 +79,22 @@ fn mmap_anonymous(
     Safety:
         Unsafe pointers and lots of special semantics.
     """
-    constrained[is_64bit()]()
+    comptime assert is_64bit()
 
-    res = syscall[__NR_mmap, UnsafePointer[c_void]](
-        unsafe_ptr, len, prot, flags | MapFlags(MAP_ANONYMOUS), NoFd, 0
+    var address: UInt = 0
+    if case .Some(ptr) = unsafe_ptr:
+        address = UInt(Int(ptr))
+    var res = syscall[__NR_mmap, Pointer[c_void, MutUntrackedOrigin]](
+        address, len, prot, flags | MapFlags(MAP_ANONYMOUS), NoFd, 0
     )
     unsafe_decode_ptr(res)
     return res
 
 
 @always_inline
-fn munmap(*, unsafe_ptr: UnsafePointer[c_void], len: UInt) raises:
+def munmap(
+    *, unsafe_ptr: Pointer[c_void, MutUntrackedOrigin], len: UInt
+) raises:
     """Unsafely removes a memory mapping.
     [Linux]: https://man7.org/linux/man-pages/man2/mmap.2.html.
 
@@ -102,13 +110,16 @@ fn munmap(*, unsafe_ptr: UnsafePointer[c_void], len: UInt) raises:
     Safety:
         Unsafe pointers and lots of special semantics.
     """
-    res = syscall[__NR_munmap, Scalar[DType.index]](unsafe_ptr, len)
+    var res = syscall[__NR_munmap, Scalar[DType.int64]](unsafe_ptr, len)
     unsafe_decode_none(res)
 
 
 @always_inline
-fn madvise(
-    *, unsafe_ptr: UnsafePointer[c_void], len: UInt, advice: Advice
+def madvise(
+    *,
+    unsafe_ptr: Pointer[c_void, MutUntrackedOrigin],
+    len: UInt,
+    advice: Advice,
 ) raises:
     """Unsafely declares the expected access pattern for the memory mapping.
     [Linux]: https://man7.org/linux/man-pages/man2/madvise.2.html.
@@ -126,45 +137,45 @@ fn madvise(
          to call `madvise` on. Some forms of `advice` may mutate the memory
          or evoke a variety of side-effects on the mapping and/or the file.
     """
-    res = syscall[__NR_madvise, Scalar[DType.index]](unsafe_ptr, len, advice)
+    var res = syscall[__NR_madvise, Scalar[DType.int64]](
+        unsafe_ptr, len, advice
+    )
     unsafe_decode_none(res)
 
 
-@value
-@register_passable("trivial")
-struct MapFlags(Defaultable):
+struct MapFlags(Defaultable, TrivialRegisterPassable):
     """`MAP_*` flags for use with `mmap` and `mmap_anonymous`."""
 
-    alias SHARED = Self(MAP_SHARED)
-    alias SHARED_VALIDATE = Self(MAP_SHARED_VALIDATE)
-    alias PRIVATE = Self(MAP_PRIVATE)
-    alias DENYWRITE = Self(MAP_DENYWRITE)
-    alias FIXED = Self(MAP_FIXED)
-    alias FIXED_NOREPLACE = Self(MAP_FIXED_NOREPLACE)
-    alias GROWSDOWN = Self(MAP_GROWSDOWN)
-    alias HUGETLB = Self(MAP_HUGETLB)
-    alias HUGE_2MB = Self(MAP_HUGE_2MB)
-    alias HUGE_1GB = Self(MAP_HUGE_1GB)
-    alias LOCKED = Self(MAP_LOCKED)
-    alias NORESERVE = Self(MAP_NORESERVE)
-    alias POPULATE = Self(MAP_POPULATE)
-    alias STACK = Self(MAP_STACK)
-    alias SYNC = Self(MAP_SYNC)
-    alias UNINITIALIZED = Self(MAP_UNINITIALIZED)
+    comptime SHARED = Self(MAP_SHARED)
+    comptime SHARED_VALIDATE = Self(MAP_SHARED_VALIDATE)
+    comptime PRIVATE = Self(MAP_PRIVATE)
+    comptime DENYWRITE = Self(MAP_DENYWRITE)
+    comptime FIXED = Self(MAP_FIXED)
+    comptime FIXED_NOREPLACE = Self(MAP_FIXED_NOREPLACE)
+    comptime GROWSDOWN = Self(MAP_GROWSDOWN)
+    comptime HUGETLB = Self(MAP_HUGETLB)
+    comptime HUGE_2MB = Self(MAP_HUGE_2MB)
+    comptime HUGE_1GB = Self(MAP_HUGE_1GB)
+    comptime LOCKED = Self(MAP_LOCKED)
+    comptime NORESERVE = Self(MAP_NORESERVE)
+    comptime POPULATE = Self(MAP_POPULATE)
+    comptime STACK = Self(MAP_STACK)
+    comptime SYNC = Self(MAP_SYNC)
+    comptime UNINITIALIZED = Self(MAP_UNINITIALIZED)
 
     var value: c_uint
 
     @always_inline("nodebug")
-    fn __init__(out self):
+    def __init__(out self):
         self.value = 0
 
     @always_inline("nodebug")
     @implicit
-    fn __init__(out self, value: c_uint):
+    def __init__(out self, value: c_uint):
         self.value = value
 
     @always_inline("nodebug")
-    fn __or__(self, rhs: Self) -> Self:
+    def __or__(self, rhs: Self) -> Self:
         """Returns `self | rhs`.
 
         Args:
@@ -176,7 +187,7 @@ struct MapFlags(Defaultable):
         return self.value | rhs.value
 
     @always_inline("nodebug")
-    fn __ior__(mut self, rhs: Self):
+    def __ior__(mut self, rhs: Self):
         """Computes `self | rhs` and saves the result in self.
 
         Args:
@@ -185,29 +196,27 @@ struct MapFlags(Defaultable):
         self = self | rhs
 
 
-@value
-@register_passable("trivial")
-struct ProtFlags(Defaultable):
+struct ProtFlags(Defaultable, TrivialRegisterPassable):
     """`PROT_*` flags for use with `mmap`."""
 
-    alias NONE = Self(PROT_NONE)
-    alias READ = Self(PROT_READ)
-    alias WRITE = Self(PROT_WRITE)
-    alias EXEC = Self(PROT_EXEC)
+    comptime NONE = Self(PROT_NONE)
+    comptime READ = Self(PROT_READ)
+    comptime WRITE = Self(PROT_WRITE)
+    comptime EXEC = Self(PROT_EXEC)
 
     var value: c_uint
 
     @always_inline("nodebug")
-    fn __init__(out self):
+    def __init__(out self):
         self.value = 0
 
     @always_inline("nodebug")
     @implicit
-    fn __init__(out self, value: c_uint):
+    def __init__(out self, value: c_uint):
         self.value = value
 
     @always_inline("nodebug")
-    fn __or__(self, rhs: Self) -> Self:
+    def __or__(self, rhs: Self) -> Self:
         """Returns `self | rhs`.
 
         Args:
@@ -219,39 +228,37 @@ struct ProtFlags(Defaultable):
         return self.value | rhs.value
 
 
-@value
-@register_passable("trivial")
-struct Advice:
+struct Advice(TrivialRegisterPassable):
     """`POSIX_MADV_*` constants for use with `madvise`."""
 
-    alias NORMAL = Self(unsafe_id=MADV_NORMAL)
-    alias RANDOM = Self(unsafe_id=MADV_RANDOM)
-    alias SEQUENTIAL = Self(unsafe_id=MADV_SEQUENTIAL)
-    alias WILLNEED = Self(unsafe_id=MADV_WILLNEED)
-    alias DONTNEED = Self(unsafe_id=MADV_DONTNEED)
-    alias FREE = Self(unsafe_id=MADV_FREE)
-    alias REMOVE = Self(unsafe_id=MADV_REMOVE)
-    alias DONTFORK = Self(unsafe_id=MADV_DONTFORK)
-    alias DOFORK = Self(unsafe_id=MADV_DOFORK)
-    alias HWPOISON = Self(unsafe_id=MADV_HWPOISON)
-    alias SOFT_OFFLINE = Self(unsafe_id=MADV_SOFT_OFFLINE)
-    alias MERGEABLE = Self(unsafe_id=MADV_MERGEABLE)
-    alias UNMERGEABLE = Self(unsafe_id=MADV_UNMERGEABLE)
-    alias HUGEPAGE = Self(unsafe_id=MADV_HUGEPAGE)
-    alias NOHUGEPAGE = Self(unsafe_id=MADV_NOHUGEPAGE)
-    alias DONTDUMP = Self(unsafe_id=MADV_DONTDUMP)
-    alias DODUMP = Self(unsafe_id=MADV_DODUMP)
-    alias WIPEONFORK = Self(unsafe_id=MADV_WIPEONFORK)
-    alias KEEPONFORK = Self(unsafe_id=MADV_KEEPONFORK)
-    alias COLD = Self(unsafe_id=MADV_COLD)
-    alias PAGEOUT = Self(unsafe_id=MADV_PAGEOUT)
-    alias POPULATE_READ = Self(unsafe_id=MADV_POPULATE_READ)
-    alias POPULATE_WRITE = Self(unsafe_id=MADV_POPULATE_WRITE)
-    alias DONTNEED_LOCKED = Self(unsafe_id=MADV_DONTNEED_LOCKED)
-    alias COLLAPSE = Self(unsafe_id=MADV_COLLAPSE)
+    comptime NORMAL = Self(unsafe_id=MADV_NORMAL)
+    comptime RANDOM = Self(unsafe_id=MADV_RANDOM)
+    comptime SEQUENTIAL = Self(unsafe_id=MADV_SEQUENTIAL)
+    comptime WILLNEED = Self(unsafe_id=MADV_WILLNEED)
+    comptime DONTNEED = Self(unsafe_id=MADV_DONTNEED)
+    comptime FREE = Self(unsafe_id=MADV_FREE)
+    comptime REMOVE = Self(unsafe_id=MADV_REMOVE)
+    comptime DONTFORK = Self(unsafe_id=MADV_DONTFORK)
+    comptime DOFORK = Self(unsafe_id=MADV_DOFORK)
+    comptime HWPOISON = Self(unsafe_id=MADV_HWPOISON)
+    comptime SOFT_OFFLINE = Self(unsafe_id=MADV_SOFT_OFFLINE)
+    comptime MERGEABLE = Self(unsafe_id=MADV_MERGEABLE)
+    comptime UNMERGEABLE = Self(unsafe_id=MADV_UNMERGEABLE)
+    comptime HUGEPAGE = Self(unsafe_id=MADV_HUGEPAGE)
+    comptime NOHUGEPAGE = Self(unsafe_id=MADV_NOHUGEPAGE)
+    comptime DONTDUMP = Self(unsafe_id=MADV_DONTDUMP)
+    comptime DODUMP = Self(unsafe_id=MADV_DODUMP)
+    comptime WIPEONFORK = Self(unsafe_id=MADV_WIPEONFORK)
+    comptime KEEPONFORK = Self(unsafe_id=MADV_KEEPONFORK)
+    comptime COLD = Self(unsafe_id=MADV_COLD)
+    comptime PAGEOUT = Self(unsafe_id=MADV_PAGEOUT)
+    comptime POPULATE_READ = Self(unsafe_id=MADV_POPULATE_READ)
+    comptime POPULATE_WRITE = Self(unsafe_id=MADV_POPULATE_WRITE)
+    comptime DONTNEED_LOCKED = Self(unsafe_id=MADV_DONTNEED_LOCKED)
+    comptime COLLAPSE = Self(unsafe_id=MADV_COLLAPSE)
 
     var id: c_uint
 
     @always_inline("nodebug")
-    fn __init__(out self, *, unsafe_id: c_uint):
+    def __init__(out self, *, unsafe_id: c_uint):
         self.id = unsafe_id

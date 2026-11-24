@@ -2,17 +2,17 @@ from .mm import Region
 from .utils import AtomicOrdering, _atomic_load, _atomic_store
 from mojix.io_uring import Cqe, CQE, CQE16, CQE32, IoUringParams
 from mojix.utils import _size_eq, _align_eq
-from memory import UnsafePointer
+from std.memory import Pointer
 
 
-struct Cq[type: CQE](Movable, Sized, Boolable):
+struct Cq[type: CQE](Boolable, Movable, Sized):
     """Completion Queue."""
 
-    var _head: UnsafePointer[UInt32]
-    var _tail: UnsafePointer[UInt32]
-    var flags: UnsafePointer[UInt32]
-    var overflow: UnsafePointer[UInt32]
-    var cqes: UnsafePointer[Cqe[type]]
+    var _head: Pointer[UInt32, MutUntrackedOrigin]
+    var _tail: Pointer[UInt32, MutUntrackedOrigin]
+    var flags: Pointer[UInt32, MutUntrackedOrigin]
+    var overflow: Pointer[UInt32, MutUntrackedOrigin]
+    var cqes: Pointer[Cqe[Self.type], MutUntrackedOrigin]
 
     var cqe_head: UInt32
     var cqe_tail: UInt32
@@ -24,13 +24,12 @@ struct Cq[type: CQE](Movable, Sized, Boolable):
     # Life cycle methods
     # ===------------------------------------------------------------------=== #
 
-    fn __init__(out self, params: IoUringParams, *, sq_cq_mem: Region) raises:
-        constrained[
-            type is CQE16 or type is CQE32,
-            "CQE must be equal to CQE16 or CQE32",
-        ]()
-        _size_eq[Cqe[type], type.size]()
-        _align_eq[Cqe[type], type.align]()
+    def __init__(out self, params: IoUringParams, *, sq_cq_mem: Region) raises:
+        comptime assert (
+            Self.type is CQE16 or Self.type is CQE32
+        ), "CQE must be equal to CQE16 or CQE32"
+        _size_eq[Cqe[Self.type], Self.type.size]()
+        _align_eq[Cqe[Self.type], Self.type.align]()
 
         self._head = sq_cq_mem.unsafe_ptr[UInt32](
             offset=params.cq_off.head, count=1
@@ -58,35 +57,35 @@ struct Cq[type: CQE](Movable, Sized, Boolable):
         if self.ring_mask != self.ring_entries - 1:
             raise "invalid cq ring_mask value"
 
-        self.cqes = sq_cq_mem.unsafe_ptr[Cqe[type]](
+        self.cqes = sq_cq_mem.unsafe_ptr[Cqe[Self.type]](
             offset=params.cq_off.cqes, count=self.ring_entries
         )
         self.cqe_head = self._head[]
         self.cqe_tail = self._tail[]
 
     @always_inline
-    fn __moveinit__(out self, owned existing: Self):
+    def __init__(out self, *, deinit move: Self):
         """Moves data of an existing Cq into a new one.
 
         Args:
-            existing: The existing Cq.
+            move: The existing Cq.
         """
-        self._head = existing._head
-        self._tail = existing._tail
-        self.flags = existing.flags
-        self.overflow = existing.overflow
-        self.cqes = existing.cqes
-        self.cqe_head = existing.cqe_head
-        self.cqe_tail = existing.cqe_tail
-        self.ring_mask = existing.ring_mask
-        self.ring_entries = existing.ring_entries
+        self._head = move._head
+        self._tail = move._tail
+        self.flags = move.flags
+        self.overflow = move.overflow
+        self.cqes = move.cqes
+        self.cqe_head = move.cqe_head
+        self.cqe_tail = move.cqe_tail
+        self.ring_mask = move.ring_mask
+        self.ring_entries = move.ring_entries
 
     # ===-------------------------------------------------------------------===#
     # Trait implementations
     # ===-------------------------------------------------------------------===#
 
     @always_inline
-    fn __len__(self) -> Int:
+    def __len__(self) -> Int:
         """Returns the number of entries in the cq.
 
         Returns:
@@ -95,7 +94,7 @@ struct Cq[type: CQE](Movable, Sized, Boolable):
         return Int(self.cqe_tail - self.cqe_head)
 
     @always_inline
-    fn __bool__(self) -> Bool:
+    def __bool__(self) -> Bool:
         """Checks whether the cq has any entries or not.
 
         Returns:
@@ -108,21 +107,22 @@ struct Cq[type: CQE](Movable, Sized, Boolable):
     # ===-------------------------------------------------------------------===#
 
     @always_inline
-    fn sync_tail(mut self):
+    def sync_tail(mut self):
         self.cqe_tail = self.tail()
 
     @always_inline
-    fn sync_head(self):
+    def sync_head(self):
         _atomic_store(self._head, self.cqe_head)
 
     @always_inline
-    fn tail(self) -> UInt32:
+    def tail(self) -> UInt32:
         return _atomic_load[AtomicOrdering.ACQUIRE](self._tail)
 
 
-@register_passable
-struct CqPtr[type: CQE, cq_origin: MutableOrigin](Sized, Boolable):
-    var cq: Pointer[Cq[type], cq_origin]
+struct CqPtr[type: CQE, cq_origin: MutOrigin](
+    Boolable, RegisterPassable, Sized
+):
+    var cq: Pointer[Cq[Self.type], Self.cq_origin]
 
     # ===------------------------------------------------------------------=== #
     # Life cycle methods
@@ -130,11 +130,11 @@ struct CqPtr[type: CQE, cq_origin: MutableOrigin](Sized, Boolable):
 
     @implicit
     @always_inline
-    fn __init__(out self, ref [cq_origin]cq: Cq[type]):
-        self.cq = Pointer.address_of(cq)
+    def __init__(out self, ref[Self.cq_origin] cq: Cq[Self.type]):
+        self.cq = Pointer(to=cq)
 
     @always_inline
-    fn __del__(owned self):
+    def __deinit__(deinit self):
         self.cq[].sync_head()
 
     # ===------------------------------------------------------------------=== #
@@ -142,21 +142,22 @@ struct CqPtr[type: CQE, cq_origin: MutableOrigin](Sized, Boolable):
     # ===------------------------------------------------------------------=== #
 
     @always_inline
-    fn __iter__(owned self) -> Self:
+    def __iter__(var self) -> Self:
         return self^
 
     @always_inline
-    fn __next__[
-        origin: MutableOrigin
-    ](ref [origin]self) -> ref [ImmutableOrigin.cast_from[origin].result] Cqe[
-        type
-    ]:
-        ptr = self.cq[].cqes.offset(self.cq[].cqe_head & self.cq[].ring_mask)
+    def __next__[
+        origin: MutOrigin
+    ](ref[origin] self) -> ref[origin] Cqe[Self.type]:
+        var ptr = self.cq[].cqes.unsafe_offset(
+            self.cq[].cqe_head & self.cq[].ring_mask
+        )
         self.cq[].cqe_head += 1
-        return ptr[]
+        var mut_ptr = rebind[Pointer[Cqe[Self.type], origin]](ptr)
+        return mut_ptr[]
 
     @always_inline
-    fn __has_next__(self) -> Bool:
+    def __has_next__(self) -> Bool:
         return self.__len__() > 0
 
     # ===------------------------------------------------------------------=== #
@@ -164,7 +165,7 @@ struct CqPtr[type: CQE, cq_origin: MutableOrigin](Sized, Boolable):
     # ===------------------------------------------------------------------=== #
 
     @always_inline
-    fn __len__(self) -> Int:
+    def __len__(self) -> Int:
         """Returns the number of entries in the cq.
 
         Returns:
@@ -173,7 +174,7 @@ struct CqPtr[type: CQE, cq_origin: MutableOrigin](Sized, Boolable):
         return len(self.cq[])
 
     @always_inline
-    fn __bool__(self) -> Bool:
+    def __bool__(self) -> Bool:
         """Checks whether the cq has any entries or not.
 
         Returns:

@@ -11,19 +11,19 @@ from mojix.io_uring import (
     IoUringSetupFlags,
 )
 from mojix.utils import _size_eq, _align_eq
-from memory import UnsafePointer
+from std.memory import Pointer
 
 
-struct Sq[type: SQE, polling: PollingMode](Movable, Sized, Boolable):
+struct Sq[type: SQE, polling: PollingMode](Boolable, Movable, Sized):
     """Submission Queue."""
 
-    var _head: UnsafePointer[UInt32]
-    var _tail: UnsafePointer[UInt32]
-    var _flags: UnsafePointer[UInt32]
-    var dropped: UnsafePointer[UInt32]
+    var _head: Pointer[UInt32, MutUntrackedOrigin]
+    var _tail: Pointer[UInt32, MutUntrackedOrigin]
+    var _flags: Pointer[UInt32, MutUntrackedOrigin]
+    var dropped: Pointer[UInt32, MutUntrackedOrigin]
 
-    var array: UnsafePointer[UInt32]
-    var sqes: UnsafePointer[Sqe[type]]
+    var array: Optional[Pointer[UInt32, MutUntrackedOrigin]]
+    var sqes: Pointer[Sqe[Self.type], MutUntrackedOrigin]
 
     var sqe_head: UInt32
     var sqe_tail: UInt32
@@ -35,19 +35,18 @@ struct Sq[type: SQE, polling: PollingMode](Movable, Sized, Boolable):
     # Life cycle methods
     # ===------------------------------------------------------------------=== #
 
-    fn __init__(
+    def __init__(
         out self,
         params: IoUringParams,
         *,
         sq_cq_mem: Region,
         sqes_mem: Region,
     ) raises:
-        constrained[
-            type is SQE64 or type is SQE128,
-            "SQE must be equal to SQE64 or SQE128",
-        ]()
-        _size_eq[Sqe[type], type.size]()
-        _align_eq[Sqe[type], type.align]()
+        comptime assert (
+            Self.type is SQE64 or Self.type is SQE128
+        ), "SQE must be equal to SQE64 or SQE128"
+        _size_eq[Sqe[Self.type], Self.type.size]()
+        _align_eq[Sqe[Self.type], Self.type.align]()
 
         self._head = sq_cq_mem.unsafe_ptr[UInt32](
             offset=params.sq_off.head, count=1
@@ -76,45 +75,46 @@ struct Sq[type: SQE, polling: PollingMode](Movable, Sized, Boolable):
             raise "invalid sq ring_mask value"
 
         if params.flags & IoUringSetupFlags.NO_SQARRAY:
-            self.array = UnsafePointer[UInt32]()
+            self.array = None
         else:
-            self.array = sq_cq_mem.unsafe_ptr[UInt32](
+            var array = sq_cq_mem.unsafe_ptr[UInt32](
                 offset=params.sq_off.array, count=self.ring_entries
             )
             # Directly map `sq` slots to `sqes`.
             for i in range(self.ring_entries):
-                self.array[i] = i
+                _atomic_store(array.unsafe_offset(i), UInt32(i))
+            self.array = array
 
-        self.sqes = sqes_mem.unsafe_ptr[Sqe[type]](
+        self.sqes = sqes_mem.unsafe_ptr[Sqe[Self.type]](
             offset=0, count=self.ring_entries
         )
         self.sqe_head = self._head[]
         self.sqe_tail = self._tail[]
 
     @always_inline
-    fn __moveinit__(out self, owned existing: Self):
+    def __init__(out self, *, deinit move: Self):
         """Moves data of an existing Sq into a new one.
 
         Args:
-            existing: The existing Sq.
+            move: The existing Sq.
         """
-        self._head = existing._head
-        self._tail = existing._tail
-        self._flags = existing._flags
-        self.dropped = existing.dropped
-        self.array = existing.array
-        self.sqes = existing.sqes
-        self.sqe_head = existing.sqe_head
-        self.sqe_tail = existing.sqe_tail
-        self.ring_mask = existing.ring_mask
-        self.ring_entries = existing.ring_entries
+        self._head = move._head
+        self._tail = move._tail
+        self._flags = move._flags
+        self.dropped = move.dropped
+        self.array = move.array
+        self.sqes = move.sqes
+        self.sqe_head = move.sqe_head
+        self.sqe_tail = move.sqe_tail
+        self.ring_mask = move.ring_mask
+        self.ring_entries = move.ring_entries
 
     # ===-------------------------------------------------------------------===#
     # Trait implementations
     # ===-------------------------------------------------------------------===#
 
     @always_inline
-    fn __len__(self) -> Int:
+    def __len__(self) -> Int:
         """Returns the number of available sq entries.
 
         Returns:
@@ -123,7 +123,7 @@ struct Sq[type: SQE, polling: PollingMode](Movable, Sized, Boolable):
         return Int(self.ring_entries - (self.sqe_tail - self.sqe_head))
 
     @always_inline
-    fn __bool__(self) -> Bool:
+    def __bool__(self) -> Bool:
         """Checks whether the sq has any available entries or not.
 
         Returns:
@@ -137,27 +137,25 @@ struct Sq[type: SQE, polling: PollingMode](Movable, Sized, Boolable):
     # ===-------------------------------------------------------------------===#
 
     @always_inline
-    fn sync_head(mut self):
+    def sync_head(mut self):
         self.sqe_head = self.head[AtomicOrdering.ACQUIRE]()
 
     @always_inline
-    fn head[ordering: AtomicOrdering](self) -> UInt32:
-        @parameter
-        if polling is SQPOLL:
+    def head[ordering: AtomicOrdering](self) -> UInt32:
+        comptime if Self.polling is SQPOLL:
             return _atomic_load[ordering](self._head)
         else:
             return self._head[]
 
     @always_inline
-    fn sync_tail(mut self):
-        @parameter
-        if polling is SQPOLL:
+    def sync_tail(mut self):
+        comptime if Self.polling is SQPOLL:
             _atomic_store(self._tail, self.sqe_tail)
         else:
-            self._tail[] = self.sqe_tail
+            _atomic_store(self._tail, self.sqe_tail)
 
     @always_inline
-    fn flush(mut self) -> UInt32:
+    def flush(mut self) -> UInt32:
         if self.sqe_head != self.sqe_tail:
             self.sqe_head = self.sqe_tail
             # Ensure that the kernel can actually see the sqe updates
@@ -173,15 +171,14 @@ struct Sq[type: SQE, polling: PollingMode](Movable, Sized, Boolable):
         return self.sqe_tail - self.head[AtomicOrdering.RELAXED]()
 
     @always_inline
-    fn flags(self) -> UInt32:
+    def flags(self) -> UInt32:
         return _atomic_load[AtomicOrdering.RELAXED](self._flags)
 
 
-@register_passable
-struct SqPtr[type: SQE, polling: PollingMode, sq_origin: MutableOrigin](
-    Sized, Boolable
+struct SqPtr[type: SQE, polling: PollingMode, sq_origin: MutOrigin](
+    Boolable, RegisterPassable, Sized
 ):
-    var sq: Pointer[Sq[type, polling], sq_origin]
+    var sq: Pointer[Sq[Self.type, Self.polling], Self.sq_origin]
 
     # ===------------------------------------------------------------------=== #
     # Life cycle methods
@@ -189,27 +186,30 @@ struct SqPtr[type: SQE, polling: PollingMode, sq_origin: MutableOrigin](
 
     @implicit
     @always_inline
-    fn __init__(out self, ref [sq_origin]sq: Sq[type, polling]):
-        self.sq = Pointer.address_of(sq)
+    def __init__(out self, ref[Self.sq_origin] sq: Sq[Self.type, Self.polling]):
+        self.sq = Pointer(to=sq)
 
     # ===------------------------------------------------------------------=== #
     # Operator dunders
     # ===------------------------------------------------------------------=== #
 
     @always_inline
-    fn __iter__(owned self) -> Self:
+    def __iter__(var self) -> Self:
         return self^
 
     @always_inline
-    fn __next__[
-        origin: MutableOrigin
-    ](ref [origin]self) -> ref [origin] Sqe[type]:
-        ptr = self.sq[].sqes.offset(self.sq[].sqe_tail & self.sq[].ring_mask)
+    def __next__[
+        origin: MutOrigin
+    ](ref[origin] self) -> ref[origin] Sqe[Self.type]:
+        var ptr = self.sq[].sqes.unsafe_offset(
+            self.sq[].sqe_tail & self.sq[].ring_mask
+        )
         self.sq[].sqe_tail += 1
-        return _nop_data(ptr[])
+        var mut_ptr = rebind[Pointer[Sqe[Self.type], origin]](ptr)
+        return _nop_data(mut_ptr[])
 
     @always_inline
-    fn __has_next__(self) -> Bool:
+    def __has_next__(self) -> Bool:
         return self.__len__() > 0
 
     # ===------------------------------------------------------------------=== #
@@ -217,7 +217,7 @@ struct SqPtr[type: SQE, polling: PollingMode, sq_origin: MutableOrigin](
     # ===------------------------------------------------------------------=== #
 
     @always_inline
-    fn __len__(self) -> Int:
+    def __len__(self) -> Int:
         """Returns the number of available sq entries.
 
         Returns:
@@ -226,7 +226,7 @@ struct SqPtr[type: SQE, polling: PollingMode, sq_origin: MutableOrigin](
         return len(self.sq[])
 
     @always_inline
-    fn __bool__(self) -> Bool:
+    def __bool__(self) -> Bool:
         """Checks whether the sq has any available entries or not.
 
         Returns:

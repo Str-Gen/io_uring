@@ -10,24 +10,22 @@ This repo includes source code for:
 - io_uring
 
 
-## Environment
-For Mojo LSP to work correctly in editors like [`Helix`](https://github.com/helix-editor/helix)
-some environment variables need to be set/modified. You can use [`direnv`](https://direnv.net/)
-or look at the `.envrc` file for values.
+## Build and test
 
-## Build
-```
-./scripts/build.sh
-```
+This port targets Mojo 1.2.0 on x86-64 Linux. Install Pixi and run:
 
-## Tests
-```
-./scripts/run_tests.sh
+```sh
+pixi run build
+pixi run test
 ```
 
-## Requirements
-Currently only x86_64 platform is supported.
+The build writes three precompiled packages to `build/`. Pass `-I build` to
+Mojo when compiling a consumer. The tests submit real kernel operations and
+require a host that permits io_uring. The library uses Mojo standard library
+APIs and Linux syscalls directly.
 
+The migration incorporates compatibility work from
+[Conobi's Mojo 0.26 port](https://github.com/Conobi/mojo-io-uring/tree/da7e527).
 
 ## License
 

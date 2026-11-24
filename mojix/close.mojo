@@ -5,7 +5,7 @@ from linux_raw.x86_64.syscall import syscall
 
 
 @always_inline
-fn close(*, unsafe_fd: UnsafeFd):
+def close(*, unsafe_fd: UnsafeFd):
     """Closes an unsafe file descriptor directly.
 
     Most users won't need to use this, as `OwnedFd` automatically closes its
@@ -25,7 +25,7 @@ fn close(*, unsafe_fd: UnsafeFd):
         The file descriptor must be valid before the call, and is not valid
         after the call.
     """
-    res = syscall[__NR_close, Scalar[DType.index], uses_memory=False](
+    var res = syscall[__NR_close, Scalar[DType.int64], uses_memory=False](
         unsafe_fd_as_arg(unsafe_fd)
     )
     _zero_result(res)
