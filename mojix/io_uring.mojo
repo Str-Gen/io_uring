@@ -360,6 +360,10 @@ struct IoUringSetupFlags(Boolable, Defaultable, TrivialRegisterPassable):
     comptime NO_MMAP = Self(IORING_SETUP_NO_MMAP)
     comptime REGISTERED_FD_ONLY = Self(IORING_SETUP_REGISTERED_FD_ONLY)
     comptime NO_SQARRAY = Self(IORING_SETUP_NO_SQARRAY)
+    comptime HYBRID_IOPOLL = Self(IORING_SETUP_HYBRID_IOPOLL)
+    comptime CQE_MIXED = Self(IORING_SETUP_CQE_MIXED)
+    comptime SQE_MIXED = Self(IORING_SETUP_SQE_MIXED)
+    comptime SQ_REWIND = Self(IORING_SETUP_SQ_REWIND)
 
     var value: UInt32
 

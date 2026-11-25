@@ -67,11 +67,7 @@ struct IoUring[
     def __init__(
         out self, *, sq_entries: UInt32, mut params: IoUringParams
     ) raises:
-        comptime assert (
-            Self.polling is not SQPOLL
-        ), "SQPOLL mode is disabled because Mojo does not have atomic fence"
-        comptime flags = Self.sqe.setup_flags | Self.cqe.setup_flags | Self.polling.setup_flags
-        params.flags |= flags
+        params.flags = Self._resolve_setup_flags(params.flags)
 
         comptime if Self.is_registered:
             self.mem = MemoryMapping[Self.sqe, Self.cqe](sq_entries, params)
@@ -129,6 +125,46 @@ struct IoUring[
     # ===-------------------------------------------------------------------===#
     # Methods
     # ===-------------------------------------------------------------------===#
+
+    @staticmethod
+    def _resolve_setup_flags(
+        flags: IoUringSetupFlags,
+    ) raises -> IoUringSetupFlags:
+        comptime assert (
+            Self.polling is not SQPOLL
+        ), "SQPOLL mode is disabled because Mojo does not have atomic fence"
+
+        comptime required = (
+            Self.sqe.setup_flags
+            | Self.cqe.setup_flags
+            | Self.polling.setup_flags
+            | OwnedFd[Self.is_registered].SETUP_FLAGS
+        )
+        # These bits change assumptions made by the queue or memory setup.
+        # The queues use fixed entry sizes and track the SQ head and tail.
+        comptime constrained_flags = (
+            IoUringSetupFlags.SQE128
+            | IoUringSetupFlags.CQE32
+            | IoUringSetupFlags.SQE_MIXED
+            | IoUringSetupFlags.CQE_MIXED
+            | IoUringSetupFlags.SQ_REWIND
+            | IoUringSetupFlags.IOPOLL
+            | IoUringSetupFlags.HYBRID_IOPOLL
+            | IoUringSetupFlags.SQPOLL
+            | IoUringSetupFlags.SQ_AFF
+            | IoUringSetupFlags.NO_MMAP
+            | IoUringSetupFlags.REGISTERED_FD_ONLY
+        )
+        comptime allowed = (
+            required | IoUringSetupFlags.HYBRID_IOPOLL if Self.polling
+            is IOPOLL else required
+        )
+        var conflicts = flags.value & constrained_flags.value & ~allowed.value
+        if conflicts:
+            raise Error(
+                t"setup flags incompatible with typed ring (mask {conflicts})"
+            )
+        return flags | required
 
     @always_inline
     def sq(
