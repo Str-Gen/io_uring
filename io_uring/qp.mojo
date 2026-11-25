@@ -134,6 +134,7 @@ struct IoUring[
     def sq(
         mut self,
     ) -> SqPtr[Self.sqe, Self.polling, origin_of(self._sq)]:
+        """Returns the submission queue after refreshing its kernel head."""
         self.sync_sq_head()
         return self.unsynced_sq()
 
@@ -141,6 +142,7 @@ struct IoUring[
     def unsynced_sq(
         mut self,
     ) -> SqPtr[Self.sqe, Self.polling, origin_of(self._sq)]:
+        """Returns the submission queue using its last observed kernel head."""
         return self._sq
 
     @always_inline
@@ -163,9 +165,11 @@ struct IoUring[
         if self.sq_needs_enter(submitted, flags) or cq_needs_enter:
             if cq_needs_enter:
                 flags |= IoUringEnterFlags.GETEVENTS
-            return self.enter(
+            var consumed = self.enter(
                 to_submit=submitted, min_complete=wait_nr, flags=flags, arg=arg
             )
+            self.sync_sq_head()
+            return consumed
 
         return submitted
 

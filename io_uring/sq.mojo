@@ -25,6 +25,7 @@ struct Sq[type: SQE, polling: PollingMode](Boolable, Movable, Sized):
     var array: Optional[Pointer[UInt32, MutUntrackedOrigin]]
     var sqes: Pointer[Sqe[Self.type], MutUntrackedOrigin]
 
+    # Last observed kernel head. Only consumed entries may be reused.
     var sqe_head: UInt32
     var sqe_tail: UInt32
 
@@ -149,26 +150,18 @@ struct Sq[type: SQE, polling: PollingMode](Boolable, Movable, Sized):
 
     @always_inline
     def sync_tail(mut self):
-        comptime if Self.polling is SQPOLL:
-            _atomic_store(self._tail, self.sqe_tail)
-        else:
-            _atomic_store(self._tail, self.sqe_tail)
+        _atomic_store(self._tail, self.sqe_tail)
 
     @always_inline
     def flush(mut self) -> UInt32:
-        if self.sqe_head != self.sqe_tail:
-            self.sqe_head = self.sqe_tail
-            # Ensure that the kernel can actually see the sqe updates
-            # when it sees the tail update.
+        # Only userspace writes the shared tail. The release store publishes
+        # the SQE writes before the kernel sees the new tail.
+        if self._tail[] != self.sqe_tail:
             self.sync_tail()
 
-        # `self.head()` load needs to be atomic when we're in SQPOLL mode
-        # since head is written concurrently by the kernel, but it
-        # doesn't need to be `AtomicOrdering.ACQUIRE`, since the kernel
-        # doesn't store to the submission queue. It advances head just to
-        # indicate that it's finished reading the submission queue entries
-        # so they're available for us to write to.
-        return self.sqe_tail - self.head[AtomicOrdering.RELAXED]()
+        # Include entries still pending from a previous submission.
+        self.sync_head()
+        return self.sqe_tail - self.sqe_head
 
     @always_inline
     def flags(self) -> UInt32:
