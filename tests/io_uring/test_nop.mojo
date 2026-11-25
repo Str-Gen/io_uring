@@ -58,6 +58,47 @@ def test_nop_skip_cqe() raises:
         _ = ring.cq(wait_nr=1, arg=WaitArg(ts).as_enter_arg())
 
 
+def test_cq_wait_with_partially_ready_queue() raises:
+    var ring = IoUring[](sq_entries=1)
+
+    # The CQ holds two entries. The third completion stays in overflow until
+    # there is room and the kernel flushes it.
+    for user_data in range(3):
+        var sq = ring.sq()
+        _ = Nop(sq.__next__()).user_data(UInt64(user_data))
+        assert_equal(ring.submit_and_wait(wait_nr=0), 1)
+
+    for cqe in ring.cq(wait_nr=0):
+        assert_equal(cqe.user_data, 0)
+        break
+
+    assert_equal(len(ring.cq(wait_nr=0)), 1)
+    var timeout = Timespec(tv_sec=0, tv_nsec=100_000_000)
+    assert_equal(
+        len(ring.cq(wait_nr=1, arg=WaitArg(timeout).as_enter_arg())), 1
+    )
+    var cq = ring.cq(wait_nr=2, arg=WaitArg(timeout).as_enter_arg())
+    assert_equal(len(cq), 2)
+    assert_equal(cq.__next__().user_data, 1)
+    assert_equal(cq.__next__().user_data, 2)
+
+
+def test_cq_timeout_with_partially_ready_queue() raises:
+    var ring = IoUring[](sq_entries=1)
+    var sq = ring.sq()
+    _ = Nop(sq.__next__()).user_data(1)
+    assert_equal(ring.submit_and_wait(wait_nr=0), 1)
+    assert_equal(len(ring.cq(wait_nr=0)), 1)
+
+    # On timeout the kernel returns success if a completion is available.
+    var timeout = Timespec(tv_sec=0, tv_nsec=100_000_000)
+    var cq = ring.cq(wait_nr=2, arg=WaitArg(timeout).as_enter_arg())
+    assert_equal(len(cq), 1)
+    assert_equal(cq.__next__().user_data, 1)
+
+
 def main() raises:
     test_nop()
     test_nop_skip_cqe()
+    test_cq_wait_with_partially_ready_queue()
+    test_cq_timeout_with_partially_ready_queue()

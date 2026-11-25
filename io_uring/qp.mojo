@@ -205,7 +205,8 @@ struct IoUring[
     @always_inline
     def flush_cq(mut self, wait_nr: UInt32, arg: EnterArg) raises:
         self._cq.sync_tail()
-        if not self._cq and (wait_nr > 0 or self.cq_needs_flush()):
+        var ready = len(self._cq)
+        if ready < Int(wait_nr) or (ready == 0 and self.cq_needs_flush()):
             _ = self.enter(
                 to_submit=0,
                 min_complete=wait_nr,
