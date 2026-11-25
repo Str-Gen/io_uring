@@ -19,7 +19,7 @@ struct Params(Defaultable, ImplicitlyCopyable, Movable):
     # ===------------------------------------------------------------------=== #
 
     def __init__(out self):
-        self.flags = IoUringSetupFlags.NO_SQARRAY
+        self.flags = IoUringSetupFlags()
         self._cq_entries = 0
         self.sq_thread_cpu = 0
         self.sq_thread_idle = 0

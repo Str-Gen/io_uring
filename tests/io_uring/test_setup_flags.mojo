@@ -28,6 +28,12 @@ def test_incompatible_setup_flags() raises:
         _ = IoUring[SQE64, CQE16, IOPOLL]._resolve_setup_flags(raw.flags)
 
 
+def test_default_setup_flags() raises:
+    var params = Params()
+    assert_equal(params.flags.value, 0)
+    assert_equal(IoUring[]._resolve_setup_flags(params.flags).value, 0)
+
+
 def test_unregistered_setup_flags() raises:
     comptime UnregisteredRing = IoUring[
         SQE64, CQE16, NOPOLL, is_registered=False
@@ -42,7 +48,7 @@ def test_unregistered_setup_flags() raises:
 
     var params = Params()
     _ = params.cq_entries(16).clamp()
-    params.flags |= IoUringSetupFlags.SUBMIT_ALL
+    params.flags |= IoUringSetupFlags.SUBMIT_ALL | IoUringSetupFlags.NO_SQARRAY
     assert_equal(
         UnregisteredRing._resolve_setup_flags(params.flags).value,
         params.flags.value,
@@ -53,7 +59,7 @@ def test_unregistered_setup_flags() raises:
 
 
 def test_matching_setup_flags() raises:
-    comptime Ring = IoUring[SQE128, CQE32, IOPOLL]
+    comptime Ring = IoUring[SQE128, CQE32, IOPOLL, is_registered=True]
     comptime registered = (
         IoUringSetupFlags.NO_MMAP | IoUringSetupFlags.REGISTERED_FD_ONLY
     )
@@ -70,14 +76,15 @@ def test_matching_setup_flags() raises:
     assert_equal(Ring._resolve_setup_flags(raw.flags).value, raw.flags.value)
 
     var params = Params()
-    params.flags |= IoUringSetupFlags.NO_MMAP
+    params.flags |= IoUringSetupFlags.NO_MMAP | IoUringSetupFlags.NO_SQARRAY
     assert_equal(
-        IoUring[]._resolve_setup_flags(params.flags).value,
+        IoUring[is_registered=True]._resolve_setup_flags(params.flags).value,
         (params.flags | registered).value,
     )
 
 
 def main() raises:
     test_incompatible_setup_flags()
+    test_default_setup_flags()
     test_unregistered_setup_flags()
     test_matching_setup_flags()

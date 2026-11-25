@@ -39,7 +39,7 @@ struct IoUring[
     cqe: CQE = CQE16,
     polling: PollingMode = NOPOLL,
     *,
-    is_registered: Bool = True,
+    is_registered: Bool = False,
 ](Movable):
     var _sq: Sq[Self.sqe, Self.polling]
     var _cq: Cq[Self.cqe]
@@ -76,16 +76,18 @@ struct IoUring[
             var fd = io_uring_setup[Self.is_registered](sq_entries, params)
             if not params.features & IoUringFeatureFlags.SINGLE_MMAP:
                 raise "system outdated"
-            var sq_len = params.sq_off.array + params.sq_entries * UInt32(
-                size_of[UInt32]()
-            )
-            var cq_len = params.cq_off.cqes + params.cq_entries * UInt32(
+            var ring_len = params.cq_off.cqes + params.cq_entries * UInt32(
                 Self.cqe.size
             )
+            if not params.flags & IoUringSetupFlags.NO_SQARRAY:
+                var sq_len = params.sq_off.array + params.sq_entries * UInt32(
+                    size_of[UInt32]()
+                )
+                ring_len = max(ring_len, sq_len)
             var sq_cq_mem = Region(
                 fd=fd,
                 offset=IORING_OFF_SQ_RING,
-                len=UInt(max(sq_len, cq_len)),
+                len=UInt(ring_len),
             )
             var sqes_mem = Region(
                 fd=fd,

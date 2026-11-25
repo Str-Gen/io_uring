@@ -1,8 +1,9 @@
 from mojix.errno import Errno
+from mojix.io_uring import IoUringSetupFlags
 from mojix.timespec import Timespec
-from io_uring import IoUring, WaitArg
+from io_uring import IoUring, Params, WaitArg
 from io_uring.op import Nop
-from std.testing import assert_equal, assert_raises
+from std.testing import assert_equal, assert_false, assert_raises, assert_true
 
 
 @fieldwise_init
@@ -18,8 +19,11 @@ struct OpQueue(TrivialRegisterPassable):
         self.size -= 1
 
 
-def test_nop() raises:
-    var ring = IoUring[](sq_entries=16)
+def test_nop_no_sq_array() raises:
+    var params = Params()
+    params.flags = IoUringSetupFlags.NO_SQARRAY
+    var ring = IoUring[is_registered=False](sq_entries=16, params=params)
+    assert_false(ring._sq.array)
     var queue = OpQueue(128)
     var total: UInt32 = 0
 
@@ -41,6 +45,31 @@ def test_nop() raises:
         total += to_submit
 
     assert_equal(total, 128)
+
+
+def test_default_depth_128() raises:
+    comptime depth = 128
+    var ring = IoUring[](sq_entries=depth)
+    assert_true(ring._sq.array)
+
+    for batch in range(2):
+        var first_tag = batch * depth
+        var sq = ring.sq()
+        assert_equal(len(sq), depth)
+        for i in range(depth):
+            _ = Nop(sq.__next__()).user_data(UInt64(first_tag + i))
+
+        assert_equal(ring.submit_and_wait(wait_nr=depth), depth)
+        var seen = List[Bool](length=depth, fill=False)
+        var completed = 0
+        for cqe in ring.cq(wait_nr=0):
+            assert_equal(cqe.res, 0)
+            var index = Int(cqe.user_data) - first_tag
+            assert_true(0 <= index < depth)
+            assert_false(seen[index])
+            seen[index] = True
+            completed += 1
+        assert_equal(completed, depth)
 
 
 def test_nop_skip_cqe() raises:
@@ -98,7 +127,8 @@ def test_cq_timeout_with_partially_ready_queue() raises:
 
 
 def main() raises:
-    test_nop()
+    test_nop_no_sq_array()
+    test_default_depth_128()
     test_nop_skip_cqe()
     test_cq_wait_with_partially_ready_queue()
     test_cq_timeout_with_partially_ready_queue()

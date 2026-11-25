@@ -10,8 +10,8 @@ def test_flags_to_index() raises:
     assert_equal(index, 35073)
 
 
-def test_buf_into_index() raises:
-    var ring = IoUring[](sq_entries=16)
+def test_buf_into_index[is_registered: Bool]() raises:
+    var ring = IoUring[is_registered=is_registered](sq_entries=16)
     var buf_ring = ring.create_buf_ring(bgid=0, entries=128, entry_size=1024)
     assert_equal(buf_ring._tail, 128)
 
@@ -26,4 +26,5 @@ def test_buf_into_index() raises:
 
 def main() raises:
     test_flags_to_index()
-    test_buf_into_index()
+    test_buf_into_index[False]()
+    test_buf_into_index[True]()
